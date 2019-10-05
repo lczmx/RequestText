@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-__verson__ = 1.0
+__verson__ = 1.1
 __auth__ = "lczmx"
 
 
@@ -77,15 +77,20 @@ class GetClassInfo:
             modify_list.append(ele.name)
 
     def check(self, title, next_page, content):
-
         if not self.title_info:
             print("\n标题匹配不到， 进入模糊匹配模式......\n")
             self.html_code_mode = True
             self.find(self.soup, title, self.title_info)
             if not self.title_info:
-                exit("标题: 模糊匹配模式也匹配不上，请检查输入内容！")
+                choice = input("（标题)    模糊匹配模式也匹配不上, 是否切换到手动输入?\n \
+                是： 输入(提示：输入格式为css/JS等筛选器的格式如：#content p)，否： 回车\n>>>")
+                if not choice:
+                    exit("用户拒绝手动输入，退出脚本")
+                self.title_info = choice.split()[::-1]
             else:
-                print("标题: 使用模糊匹配模式匹配成功\n")
+                print("(标题)    使用模糊匹配模式匹配成功\n")
+        else:
+            print("(标题)    匹配成功!\n")
 
         if not self.next_page_info:
             print("\n下一页标签匹配不到， 进入模糊匹配模式......\n")
@@ -93,19 +98,35 @@ class GetClassInfo:
             self.html_code_mode = True
             self.find(self.soup, next_page, self.next_page_info)
             if not self.next_page_info:
-                exit("下一页：模糊匹配模式也匹配不上，请检查输入内容！")
+                choice = input("（下一页）    模糊匹配模式也匹配不上, 是否切换到手动输入?\n \
+                是： 输入(提示：输入格式为css/JS等筛选器的格式如：#content p)，否： 回车\n>>>")
+                if not choice:
+                    exit("用户拒绝手动输入，退出脚本")
+                self.next_page_info = choice.split()[::-1]
+                self.next_page_string = None
+
             else:
-                print("下一页: 使用模糊匹配模式匹配成功\n")
+                print("(下一页)    使用模糊匹配模式匹配成功\n")
+        else:
+            print("(下一页)    匹配成功!\n")
 
         if not self.content_info:
             print("\n内容匹配不到， 进入模糊匹配模式......\n")
 
             self.html_code_mode = True
             self.find(self.soup, content, self.content_info)
+
             if not self.content_info:
-                exit("内容：模糊匹配模式也匹配不上，请检查输入内容！")
+                choice = input("（内容）    模糊匹配模式也匹配不上, 是否切换到手动输入?\n \
+                是： 输入(提示：输入格式为css/JS等筛选器的格式如：#content p)，否： 回车\n>>>")
+                if not choice:
+                    exit("用户拒绝手动输入，退出脚本")
+
+                self.content_info = choice.split()[::-1]
             else:
-                print("内容: 使用模糊匹配模式匹配成功\n")
+                print("(内容)    使用模糊匹配模式匹配成功\n")
+        else:
+            print("(内容)    匹配成功!\n")
 
     def find(self, ele, text, in_fo):
         try:
@@ -147,6 +168,7 @@ class GetText:
         self.content_info = content_info
         self.next_page_string = next_page_string
         self.soup = None
+        self._next_page_index = None
         self.title = None
         self.content_list = None
         self.base_url = None
@@ -176,7 +198,10 @@ class GetText:
         self.soup = BeautifulSoup(r.text, "html.parser")
 
     def get_title(self):
-        self.title = self.soup.select(" ".join(self.title_info[::-1]))[0].text
+        title = self.soup.select(" ".join(self.title_info[::-1]))
+        if not title:
+            exit("找不到标题")
+        self.title = title[0].text
 
     def get_content(self):
         self.content_list = self.soup.select(" ".join(self.content_info[::-1]))
@@ -195,10 +220,33 @@ class GetText:
     def get_next(self):
         next_ele = None
         ele = self.soup.select(" ".join(self.next_page_info[::-1]))
+        if not ele:
+            exit("找不到下一页")
+        elif len(ele) > 1:
+            # 防止为多个并列的 a标签, 手动模式时 self.next_page_string为 None
+            if self.next_page_string:
+                for i in ele:
+                    if self.next_page_string in i.text:
+                        next_ele = i
+            # 已经确定位置，手动模式
+            elif self._next_page_index or self._next_page_index == 0:
+                next_ele = ele[self._next_page_index]
 
-        for i in ele:
-            if i.text == self.next_page_string:
-                next_ele = i
+            # 开始手动模式
+            else:
+                for index, ele_obj in enumerate(ele):
+                    print("%s --> %s" % (index, ele_obj.text))
+                while True:
+                    index_choice = input("请根据以上内容，输入下一页的索引值\>>>")
+                    if not index_choice: continue
+                    try:
+                        self._next_page_index = int(index_choice)
+                        break
+                    except ValueError:
+                        print("要输入数字啊大哥！")
+                next_ele = ele[self._next_page_index]
+        else:
+            next_ele = ele[0]
 
         # 没有 下一章标签
         if not next_ele:
@@ -224,8 +272,12 @@ class GetText:
             print("检测到 next_url 为 javascript\n本爬虫不支持JS页面的爬取，正在停止爬取......")
             return True
         # 究极比对
+
         if next_url.startswith("http"):
             new_url = next_url
+        elif next_url.startswith("//"):
+            http_head = self.base_url.split("//")[0]
+            new_url = http_head + next_url
         else:
             if self.base_url.endswith("/"):
                 new_url = self.base_url[:-1] + next_url
@@ -235,6 +287,8 @@ class GetText:
         url_list1 = self.url.split("/")[:-1]
         url_list2 = new_url.split("/")[:-1]
         if url_list1 != url_list2:
+            print("当前页的url：%s" % self.url)
+            print("下一页的url：%s" % new_url)
             print("究极比对未通过")
             return True
         else:
